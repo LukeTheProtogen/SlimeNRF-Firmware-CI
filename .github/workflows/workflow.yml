@@ -786,8 +786,14 @@ jobs:
 
         - name: 🔑 Authenticate GitHub CLI
           id: gh-auth
+          env:
+            GH_TOKEN_INPUT: ${{ secrets.gh_token }}
           run: |
-            gh auth login --with-token <<< "${{ secrets.gh_token }}"
+            if [ -z "${GH_TOKEN_INPUT}" ]; then
+              echo "::error::GH_TOKEN repository secret is empty or missing. Create it under Settings → Secrets and variables → Actions (see README)." >&2
+              exit 1
+            fi
+            gh auth login --with-token <<< "${GH_TOKEN_INPUT}"
 
         - name: 📁 Upload Latest Release
           id: upload-latest
