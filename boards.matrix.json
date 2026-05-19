@@ -1214,6 +1214,13 @@
       },
       "name_style": "combined",
       "fileformat": "uf2"
+    },
+    {
+      "boardname": "universal_nrf_dongle_uf2/nrf52840",
+      "source": "slimenrf_receiver_luke_dev",
+      "type": "receiver",
+      "filename": "SlimeNRF_Universal_nRF_Dongle_Receiver",
+      "fileformat": "uf2"
     }
   ],
   "sources": {
@@ -1284,6 +1291,11 @@
     },
     "slimevr_tracker_nrf_dev": {
       "repository_url": "https://github.com/jitingcn/SlimeVR-Tracker-nRF.git",
+      "repository_revision": "dev",
+      "profile": "sdk_jiting_esb"
+    },
+    "slimenrf_receiver_luke_dev": {
+      "repository_url": "https://github.com/LukeTheProtogen/Tracker-nRF-Receiver.git",
       "repository_revision": "dev",
       "profile": "sdk_jiting_esb"
     }
