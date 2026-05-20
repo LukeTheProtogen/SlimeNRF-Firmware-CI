@@ -273,18 +273,6 @@ jobs:
             mv data/tmp.json data/lookups.json
           done
 
-          CUSTOM_URL="https://github.com/Shine-Bright-Meow/SlimeNRF-Tracker.git"
-          CUSTOM_BRANCH="custom"
-          CUSTOM_SHA="$(resolve_sha "$CUSTOM_URL" "$CUSTOM_BRANCH" | tr -d '\n')"
-          CUSTOM_KEY="${CUSTOM_URL}@${CUSTOM_BRANCH}"
-
-          jq \
-            --arg key "$CUSTOM_KEY" \
-            --arg sha "$CUSTOM_SHA" \
-            '.custom[$key]=$sha' \
-            data/lookups.json > data/tmp.json
-          mv data/tmp.json data/lookups.json
-
           TAG_NAME="${{ steps.daily-tag.outputs.tag_name }}"
 
           jq --arg tag "$TAG_NAME" '.tag.name=$tag' data/lookups.json > data/tmp.json
@@ -303,15 +291,6 @@ jobs:
           if jq -e '.firmware | to_entries[] | select(.value == "")' data/lookups.json >/dev/null 2>&1; then
             echo "ERROR: Blank firmware SHA(s) found:" >&2
             jq -r '.firmware | to_entries[] | select(.value == "") | .key' data/lookups.json >&2
-            exit 1
-          fi
-          if jq -e '.custom | to_entries[] | select(.value == "")' data/lookups.json >/dev/null 2>&1; then
-            echo "ERROR: Blank custom SHA(s) found:" >&2
-            jq -r '.custom | to_entries[] | select(.value == "") | .key' data/lookups.json >&2
-            exit 1
-          fi
-          if [[ -z "$CUSTOM_SHA" ]]; then
-            echo "ERROR: CUSTOM_SHA resolved blank"
             exit 1
           fi
           echo "All SHAs resolved successfully."
@@ -541,138 +520,6 @@ jobs:
 
           sudo rm -rf Releases-${{ matrix.boards.index }}
           mkdir Releases-${{ matrix.boards.index }}
-
-      - name: 🔧 Configure Tracker Options
-        id: configure-tracker
-        if: ${{ matrix.boards.type == 'tracker' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd zephyr-workspace
-
-          CLK='${{ matrix.boards.clk }}'
-          EXTRA='${{ matrix.boards.extraaction }}'
-          MAG='${{ matrix.boards.magnetometer }}'
-          SLEEP='${{ matrix.boards.sleep }}'
-          SW0='${{ matrix.boards.sw0 }}'
-
-          append_conf() { printf "\n\n%s" "$1" >> SlimeVR-Tracker-nRF/prj.conf; }
-
-          if [ "$CLK" = "disabled" ]; then
-            sed -i 's|clk-gpios[[:space:]]*=|// clk-gpios =|g' SlimeVR-Tracker-nRF/boards/nordic/promicro_uf2/promicro_uf2.dts
-            sed -i 's|clk-gpios[[:space:]]*=|// clk-gpios =|g' SlimeVR-Tracker-nRF/boards/xiao_ble.overlay
-            sed -i 's|clk-gpios[[:space:]]*=|// clk-gpios =|g' SlimeVR-Tracker-nRF/boards/xiao_ble_nrf52840_sense.overlay
-            append_conf 'CONFIG_USE_SENSOR_CLOCK=n'
-          elif [ "$CLK" = "enabled" ]; then
-            sed -i 's|//[[:space:]]*clk-gpios|clk-gpios|g' SlimeVR-Tracker-nRF/boards/nordic/promicro_uf2/promicro_uf2.dts
-            sed -i 's|//[[:space:]]*clk-gpios|clk-gpios|g' SlimeVR-Tracker-nRF/boards/xiao_ble.overlay
-            append_conf 'CONFIG_USE_SENSOR_CLOCK=y'
-          fi
-
-          if [ "$EXTRA" = "disabled" ]; then
-            append_conf 'CONFIG_USER_EXTRA_ACTIONS=n'
-          elif [ "$EXTRA" = "enabled" ]; then
-            append_conf 'CONFIG_USER_EXTRA_ACTIONS=y'
-          fi
-
-          if [ "$MAG" = "disabled" ]; then
-            append_conf 'CONFIG_SENSOR_USE_MAG=n'
-          elif [ "$MAG" = "enabled" ]; then
-            append_conf 'CONFIG_SENSOR_USE_MAG=y'
-          fi
-
-          if [ "$SLEEP" = "disabled" ]; then
-            append_conf 'CONFIG_USE_IMU_WAKE_UP=n'
-            append_conf 'CONFIG_USE_ACTIVE_TIMEOUT=n'
-            append_conf 'CONFIG_SENSOR_LP_TIMEOUT=300000'
-            append_conf 'CONFIG_SENSOR_USE_LOW_POWER_2=n'
-          elif [ "$SLEEP" = "enabled" ]; then
-            append_conf 'CONFIG_USE_IMU_WAKE_UP=y'
-            append_conf 'CONFIG_USE_ACTIVE_TIMEOUT=y'
-          fi
-
-          if [ "$SW0" = "disabled" ]; then
-            sed -i 's|sw0[[:space:]]*=|// sw0 =|g' SlimeVR-Tracker-nRF/boards/nordic/promicro_uf2/promicro_uf2.dts
-            sed -i 's|sw0[[:space:]]*=|// sw0 =|g' SlimeVR-Tracker-nRF/boards/xiao_ble.overlay
-            sed -i 's|sw0[[:space:]]*=|// sw0 =|g' SlimeVR-Tracker-nRF/boards/xiao_ble_nrf52840_sense.overlay
-          elif [ "$SW0" = "enabled" ]; then
-            sed -i 's|//[[:space:]]*sw0[[:space:]]*=|sw0 =|g' SlimeVR-Tracker-nRF/boards/nordic/promicro_uf2/promicro_uf2.dts
-            sed -i 's|//[[:space:]]*sw0[[:space:]]*=|sw0 =|g' SlimeVR-Tracker-nRF/boards/xiao_ble.overlay
-            sed -i 's|//[[:space:]]*sw0[[:space:]]*=|sw0 =|g' SlimeVR-Tracker-nRF/boards/xiao_ble_nrf52840_sense.overlay
-          fi
-
-      - name: 🔎 Retrieve Custom Boards Commit
-        if: ${{ (matrix.boards.type == 'tracker') && ((contains(matrix.boards.boardname, 'stacked') || (matrix.boards.boardname == 'promicro_uf2/nrf52840/bao') || (matrix.boards.boardname == 'promicro_uf2/nrf52840/chrysalis') || (matrix.boards.boardname == 'kawazu_uf2/nrf52833'))) }}
-        id: custom-hash
-        shell: bash
-        run: |
-          CUSTOM_KEY="https://github.com/Shine-Bright-Meow/SlimeNRF-Tracker.git@custom"
-          CUSTOM_SHA=$(jq -r --arg key "$CUSTOM_KEY" '.custom[$key]' data/lookups.json)
-
-          echo "sha=$CUSTOM_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: 📦 Restore Custom Boards Cache
-        if: ${{ (matrix.boards.type == 'tracker') && ((contains(matrix.boards.boardname, 'stacked') || (matrix.boards.boardname == 'promicro_uf2/nrf52840/bao') || (matrix.boards.boardname == 'promicro_uf2/nrf52840/chrysalis') || (matrix.boards.boardname == 'kawazu_uf2/nrf52833'))) }}
-        id: restore-custom
-        uses: actions/cache/restore@v5
-        with:
-          path: zephyr-workspace/custom
-          key: custom-${{ steps.custom-hash.outputs.sha }}
-
-      - name: 📥 Clone Custom Boards Repository
-        id: clone-custom
-        if: ${{ (steps.restore-custom.outputs.cache-hit != 'true') && (steps.restore-custom.outcome == 'success') }}
-        run: |
-          cd zephyr-workspace
-
-          sudo rm -rf custom
-          git clone --single-branch -b custom https://github.com/Shine-Bright-Meow/SlimeNRF-Tracker.git custom
-
-      - name: 📦 Save Custom Boards Cache
-        id: cache-custom
-        if: ${{ steps.clone-custom.outcome == 'success' }}
-        uses: actions/cache/save@v5
-        with:
-          path: zephyr-workspace/custom
-          key: custom-${{ steps.custom-hash.outputs.sha }}
-
-      - name: 🔧 Board Adjustments
-        id: board-adjustments
-        shell: bash
-        run: |
-          boardname="${{ matrix.boards.boardname }}"
-          filename="${{ matrix.boards.filename }}"
-          repository_url="${{ matrix.boards.repository_url }}"
-          repository_revision="${{ matrix.boards.repository_revision }}"
-          type="${{ matrix.boards.type }}"
-          sdk_revision="${{ matrix.boards.sdk_revision }}"
-
-          cd zephyr-workspace
-          
-          shopt -s nocasematch
-          if [[ "$repository_url" == *"https://github.com/SlimeVR/SlimeVR-Tracker-nRF"* && "$repository_revision" == "main" && ( "$boardname" == *xiao_ble* || "$boardname" == "nrf52840dongle/nrf52840" || "$sdk_revision" == "v3.1-branch") ]]; then
-            if [[ "$type" == "tracker" ]]; then
-              sed -i 's|SPI_DT_SPEC_GET(\([^,]*,[[:space:]]*SPI_OP\))|SPI_DT_SPEC_GET(\1, 0)|g' SlimeVR-Tracker-nRF/src/sensor/sensor.c
-            else
-              sed -i 's/^#CONFIG_NRFX_TIMER1=y/CONFIG_NRFX_TIMER1=y/' SlimeVR-Tracker-nRF/prj.conf
-              sed -i 's|^[[:space:]]*//[[:space:]]*\(IRQ_DIRECT_CONNECT(TIMER1_IRQn.*\)|\1|' SlimeVR-Tracker-nRF/src/connection/timer.c
-              sed -i 's|^[[:space:]]*//[[:space:]]*\(irq_enable(TIMER1_IRQn.*\)|\1|' SlimeVR-Tracker-nRF/src/connection/timer.c
-            fi
-          fi
-          if [[ "$repository_url" == "https://github.com/LyallUlric/Stacked-SmolSlime.git" ]]; then
-            printf "\n\nCONFIG_SENSOR_USE_6_SIDE_CALIBRATION=y" >> SlimeVR-Tracker-nRF/prj.conf
-          elif [[ "$boardname" == *stacked* ]]; then
-            sed -i '/^[[:space:]]*#define[[:space:]]*DFU_EXISTS[[:space:]]*CONFIG_BUILD_OUTPUT_UF2[[:space:]]*||[[:space:]]*CONFIG_BOARD_HAS_NRF5_BOOTLOADER/i #include <zephyr/drivers/gpio.h>\n#define ZEPHYR_USER_NODE DT_PATH(zephyr_user)\n#if DT_NODE_HAS_PROP(ZEPHYR_USER_NODE, pwr_gpios)\nstatic const struct gpio_dt_spec pwr = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, pwr_gpios);\n#endif\n#if DT_NODE_HAS_PROP(ZEPHYR_USER_NODE, gnd_gpios)\nstatic const struct gpio_dt_spec gnd = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, gnd_gpios);\n#endif' SlimeVR-Tracker-nRF/src/main.c
-            sed -i '/^[[:space:]]*#ifdef[[:space:]]*NRF_RESET/i #if DT_NODE_HAS_PROP(ZEPHYR_USER_NODE, pwr_gpios)\n    gpio_pin_configure_dt(&pwr, GPIO_OUTPUT_ACTIVE);\n    gpio_pin_set_dt(&pwr, 1);\n#endif\n#if DT_NODE_HAS_PROP(ZEPHYR_USER_NODE, gnd_gpios)\n    gpio_pin_configure_dt(&gnd, GPIO_OUTPUT_ACTIVE);\n    gpio_pin_set_dt(&gnd, 0);\n#endif' SlimeVR-Tracker-nRF/src/main.c
-            cp -rT custom/stacked SlimeVR-Tracker-nRF
-          elif [[ "$boardname" == "promicro_uf2/nrf52840/bao" ]]; then
-            cp -rT custom/bao SlimeVR-Tracker-nRF
-          elif [[ "$boardname" == *promicro* && "$boardname" != *stacked* && "$type" == "tracker" ]]; then
-            sed -i '/^[[:space:]]*nrf_gpio_cfg(NRF_GPIO_PIN_MAP(0, 13)/ s/NRF_GPIO_PIN_PULLDOWN/NRF_GPIO_PIN_PULLUP/' SlimeVR-Tracker-nRF/boards/nordic/promicro_uf2/board.c
-          elif [[ "$boardname" == "kawazu_uf2/nrf52833" ]]; then
-            cp -rT custom/kawazu SlimeVR-Tracker-nRF
-          fi
-          shopt -u nocasematch
 
       - name: 🔨 Build SlimeVR-Tracker-nRF - ${{ matrix.boards.boardname }}
         id: build-firmware
